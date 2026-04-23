@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-forge-bg text-forge-text font-mono;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-forge-panel border border-forge-border rounded-sm overflow-hidden;
+  }
+  .panel-header {
+    @apply px-3 py-1.5 border-b border-forge-border flex items-center justify-between;
+  }
+  .panel-title {
+    @apply text-xs font-semibold tracking-widest text-forge-muted uppercase;
+  }
+  .tag-green {
+    @apply text-xs px-1.5 py-0.5 rounded text-forge-accent bg-forge-accent/10 font-semibold;
+  }
+  .tag-red {
+    @apply text-xs px-1.5 py-0.5 rounded text-forge-red bg-forge-red/10 font-semibold;
+  }
+  .tag-yellow {
+    @apply text-xs px-1.5 py-0.5 rounded text-forge-yellow bg-forge-yellow/10 font-semibold;
+  }
+  .tag-blue {
+    @apply text-xs px-1.5 py-0.5 rounded text-forge-blue bg-forge-blue/10 font-semibold;
+  }
+  .blink {
+    animation: blink 1.2s step-start infinite;
+  }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.neon-green {
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.6), 0 0 20px rgba(0, 255, 136, 0.3);
+}
+
+.neon-red {
+  text-shadow: 0 0 10px rgba(255, 51, 102, 0.6), 0 0 20px rgba(255, 51, 102, 0.3);
+}
