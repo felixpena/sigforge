@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Literal
 from datetime import datetime
 import uuid
@@ -71,18 +71,25 @@ class Evidence(BaseModel):
 
 class SignalOutput(BaseModel):
     market_id: str
-    thesis: str
-    direction: Literal["YES", "NO"]
-    true_probability: float
-    market_probability: float
-    edge: float
-    conviction: float
-    evidence: List[Evidence]
-    base_rate: str
-    invalidation: str
-    time_sensitivity: Literal["IMMEDIATE", "HOURS", "DAYS"]
-    recommendation: Literal["TRADE", "MONITOR", "PASS", "VETO"]
-    reasoning: str
+    thesis: str = ""
+    direction: Literal["YES", "NO"] = "NO"
+    true_probability: float = 0.0
+    market_probability: float = 0.0
+    edge: float = 0.0
+    conviction: float = 0.0
+    evidence: List[Evidence] = []
+    base_rate: str = ""
+    invalidation: str = ""
+    time_sensitivity: Literal["IMMEDIATE", "HOURS", "DAYS"] = "DAYS"
+    recommendation: Literal["TRADE", "MONITOR", "PASS", "VETO"] = "PASS"
+    reasoning: str = ""
+
+    @field_validator("true_probability", "market_probability", "edge", "conviction", mode="before")
+    @classmethod
+    def coerce_float(cls, v):
+        if v is None:
+            return 0.0
+        return float(v)
 
 
 # ─── Risk Output ──────────────────────────────────────────────────────────────
