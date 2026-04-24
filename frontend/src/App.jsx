@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react'
-import { useWebSocket } from './hooks/useWebSocket'
+import { usePolling } from './hooks/usePolling'
 import { LivePnL } from './components/LivePnL'
 import { ActivePositions } from './components/ActivePositions'
 import { ScanLog } from './components/ScanLog'
@@ -116,7 +116,7 @@ export default function App() {
     }
   }, [])
 
-  const { connected, reconnecting } = useWebSocket(handleMessage)
+  const { connected, reconnecting } = usePolling(handleMessage)
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-forge-bg" style={{ maxHeight: '100vh' }}>
