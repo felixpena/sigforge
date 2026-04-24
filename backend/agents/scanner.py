@@ -75,7 +75,7 @@ class ScannerAgent(BaseAgent):
 
         # Build compact market summary for Claude
         market_summaries = []
-        for m in markets[:80]:  # cap to avoid token overflow
+        for m in markets[:500]:  # scan full market universe
             end_date = m.get("end_date", "unknown")
             tokens = m.get("tokens", [])
             yes_price = next((t["price"] for t in tokens if t.get("outcome", "").upper() == "YES"), None)

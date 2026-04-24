@@ -65,20 +65,41 @@ class GammaClient:
             data = r.json()
             return data if isinstance(data, list) else data.get("events", [])
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
-    async def get_top_markets(self, limit: int = 50) -> list[dict]:
-        """Fetch top markets sorted by volume."""
-        params = {
-            "limit": limit,
-            "active": "true",
-            "_sort": "volume",
-            "_order": "DESC",
-        }
-        async with _make_client(GAMMA_URL) as c:
-            r = await c.get("/markets", params=params)
-            r.raise_for_status()
-            data = r.json()
-            return data if isinstance(data, list) else data.get("markets", [])
+    async def get_top_markets(self, limit: int = 500) -> list[dict]:
+        """
+        Fetch top markets sorted by volume using offset pagination.
+        Gamma API max page size is 100, so we fan out pages in parallel
+        then trim to the requested limit.
+        """
+        PAGE_SIZE = 100
+        num_pages = (limit + PAGE_SIZE - 1) // PAGE_SIZE  # ceiling division
+
+        async def _fetch_page(offset: int) -> list[dict]:
+            params = {
+                "limit": PAGE_SIZE,
+                "offset": offset,
+                "active": "true",
+                "_sort": "volume",
+                "_order": "DESC",
+            }
+            async with _make_client(GAMMA_URL) as c:
+                r = await c.get("/markets", params=params)
+                r.raise_for_status()
+                data = r.json()
+                return data if isinstance(data, list) else data.get("markets", [])
+
+        pages = await asyncio.gather(
+            *[_fetch_page(i * PAGE_SIZE) for i in range(num_pages)],
+            return_exceptions=True,
+        )
+
+        result = []
+        for page in pages:
+            if isinstance(page, Exception):
+                continue
+            result.extend(page)
+
+        return result[:limit]
 
 
 # ─── Data API ─────────────────────────────────────────────────────────────────
@@ -310,7 +331,7 @@ class PolymarketClient:
         self.clob = ClobClient()
         self.auth = AuthenticatedClobClient()
 
-    async def get_top_markets_enriched(self, limit: int = 50) -> list[dict]:
+    async def get_top_markets_enriched(self, limit: int = 500) -> list[dict]:
         """
         Fetch top markets from Gamma and enrich with CLOB price data.
         Returns list of dicts with merged metadata + pricing.

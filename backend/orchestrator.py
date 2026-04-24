@@ -72,7 +72,7 @@ class Orchestrator:
 
         # ── Step 1: Fetch markets ──────────────────────────────────────────
         try:
-            markets = await polymarket.get_top_markets_enriched(limit=80)
+            markets = await polymarket.get_top_markets_enriched(limit=500)
             await self._emit("markets_fetched", {"count": len(markets)})
         except Exception as e:
             await self._log_system(f"Failed to fetch markets: {e}", level="ERROR")
