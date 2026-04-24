@@ -62,7 +62,10 @@ class WalletTrackerAgent:
         print(f"[WALLET] Fetching leaderboard from data-api.polymarket.com")
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as c:
-                r = await c.get(f"{DATA_URL}/leaderboard")
+                r = await c.get(
+                    f"{DATA_URL}/v1/leaderboard",
+                    params={"limit": 50, "orderBy": "PNL", "timePeriod": "ALL"},
+                )
                 print(f"[WALLET] Leaderboard response: {r.status_code}")
                 r.raise_for_status()
                 data = r.json()
@@ -72,14 +75,10 @@ class WalletTrackerAgent:
 
             wallets = []
             for entry in entries:
-                addr = (
-                    entry.get("proxyWallet")
-                    or entry.get("address")
-                    or entry.get("name")
-                )
+                addr = entry.get("proxyWallet")
                 if not addr or not str(addr).startswith("0x"):
                     continue
-                pnl = float(entry.get("pnl") or entry.get("profit") or 0)
+                pnl = float(entry.get("pnl") or 0)
                 wallets.append({"address": str(addr), "pnl": pnl})
                 if len(wallets) >= self.TOP_WALLETS:
                     break
