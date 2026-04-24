@@ -137,15 +137,15 @@ class Orchestrator:
                 agent="SIGNAL"
             )
 
-            if signal.recommendation not in ("TRADE",):
+            if signal.recommendation == "VETO":
                 await self._log_system(
-                    f"SIGNAL gated: {signal.recommendation} (conviction={signal.conviction}, "
-                    f"min_conviction={settings.min_conviction}) — {opp.question[:50]}",
+                    f"SIGNAL VETO — skipping RISK: conviction={signal.conviction} — {opp.question[:50]}",
                     agent="SIGNAL"
                 )
                 continue
 
             # ── RISK evaluation ─────────────────────────────────────────
+            print(f"[ORCHESTRATOR] Passing to RISK: market={opp.market_id} conviction={signal.conviction} recommendation={signal.recommendation}")
             if not portfolio:
                 portfolio = await rc.init_portfolio()
 
