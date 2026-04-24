@@ -26,12 +26,16 @@ class WalletTrackerAgent:
     CLUSTER_STRONG = 5                  # wallets needed for STRONG_CLUSTER signal
     TOP_WALLETS = 20
 
+    MAX_QUEUE_SIZE = 5
+
     def __init__(self, broadcast: Callable[[dict], Awaitable[None]]):
         self.broadcast = broadcast
         self._running = False
         # market_id -> list[{wallet, wallet_pnl, ts, direction, price, question}]
         self._recent_entries: dict[str, list[dict]] = {}
         self._last_leaderboard_refresh = 0.0
+        # Session-level dedup: never re-signal a market_id once it has been emitted
+        self._signalled_markets: set[str] = set()
 
     async def start(self):
         self._running = True
@@ -141,16 +145,32 @@ class WalletTrackerAgent:
         for sig in ranked:
             if pushed >= self.MAX_SIGNALS_PER_CYCLE:
                 break
-            if sig["market_id"] in queued_ids:
-                print(f"[WALLET] Dedup: skipping already-queued market={sig['market_id'][:24]}")
+
+            mid = sig["market_id"]
+
+            # Session-level dedup — never re-signal the same market
+            if mid in self._signalled_markets:
+                print(f"[WALLET] Session dedup: skipping already-signalled market={mid[:24]}")
                 continue
 
+            # Queue-level dedup — skip if market already sitting in queue
+            if mid in queued_ids:
+                print(f"[WALLET] Dedup: skipping already-queued market={mid[:24]}")
+                continue
+
+            # Hard queue cap — don't flood orchestrator
+            queue_size = len(queued_ids)
+            if queue_size >= self.MAX_QUEUE_SIZE:
+                print(f"[WALLET] Queue size: {queue_size}, skipping")
+                break
+
             await rc.push_wallet_signal(sig)
-            queued_ids.add(sig["market_id"])  # prevent double-push within same cycle
+            self._signalled_markets.add(mid)
+            queued_ids.add(mid)  # prevent double-push within same cycle
             pushed += 1
 
             log_msg = (
-                f"[WALLET] {sig['signal_type']} market={sig['market_id'][:24]} "
+                f"[WALLET] {sig['signal_type']} market={mid[:24]} "
                 f"wallets={sig['wallet_count']} confidence={sig['confidence']}"
             )
             await self._log("INFO", log_msg)
