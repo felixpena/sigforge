@@ -73,39 +73,48 @@ class ScannerAgent(BaseAgent):
     async def scan(self, markets: list[dict]) -> Optional[ScannerOutput]:
         await self._log("INFO", f"Starting scan of {len(markets)} markets")
 
-        # Build compact market summary for Claude
-        market_summaries = []
-        for m in markets[:500]:  # scan full market universe
-            end_date = m.get("end_date", "unknown")
-            tokens = m.get("tokens", [])
-            yes_price = next((t["price"] for t in tokens if t.get("outcome", "").upper() == "YES"), None)
-            no_price = next((t["price"] for t in tokens if t.get("outcome", "").upper() == "NO"), None)
+        # Pre-filter: active markets with sufficient liquidity only
+        eligible = [
+            m for m in markets
+            if not m.get("closed", False)
+            and m.get("active", True)
+            and float(m.get("liquidity", 0) or 0) >= settings.min_liquidity_usd
+        ]
 
+        # Sort by liquidity desc so the best markets go to Claude first
+        eligible.sort(key=lambda m: float(m.get("liquidity", 0) or 0), reverse=True)
+
+        await self._log(
+            "INFO",
+            f"Pre-filter: {len(eligible)}/{len(markets)} markets eligible "
+            f"(liquidity ≥ ${settings.min_liquidity_usd:,.0f}, active)",
+        )
+
+        # Build minimal summaries — only fields Claude needs
+        market_summaries = []
+        for m in eligible[:100]:  # cap at 100 to stay within Claude token limits
+            tokens = m.get("tokens", [])
+            yes_price = next(
+                (t["price"] for t in tokens if t.get("outcome", "").upper() == "YES"), None
+            )
             if yes_price is None and tokens:
                 yes_price = tokens[0].get("price", 0)
-            if no_price is None and len(tokens) > 1:
-                no_price = tokens[1].get("price", 0)
 
-            summary = {
-                "id": m.get("id", ""),
-                "question": m.get("question", "")[:120],
-                "category": m.get("category", ""),
-                "yes_price": round(float(yes_price or 0), 4),
-                "no_price": round(float(no_price or 0), 4),
+            market_summaries.append({
+                "market_id": m.get("id", ""),
+                "question": m.get("question", "")[:100],
+                "price": round(float(yes_price or 0), 4),
                 "volume_24h": round(float(m.get("volume_24h", 0) or 0), 2),
                 "liquidity": round(float(m.get("liquidity", 0) or 0), 2),
-                "end_date": end_date,
-                "description": (m.get("description", "") or "")[:100],
-            }
-            market_summaries.append(summary)
+                "end_date": m.get("end_date") or "unknown",
+            })
 
         user_message = f"""Current UTC timestamp: {datetime.now(timezone.utc).isoformat()}
 
-MARKET DATA ({len(market_summaries)} markets):
+MARKET DATA ({len(market_summaries)} markets, pre-filtered by liquidity ≥ ${settings.min_liquidity_usd:,.0f}):
 {json.dumps(market_summaries, indent=2)}
 
 Analyze these markets for anomalies. Apply all rules strictly.
-Minimum liquidity: ${settings.min_liquidity_usd:,.0f}
 Minimum anomaly score: {settings.min_anomaly_score}
 Maximum opportunities: {settings.max_opportunities_per_scan}
 
