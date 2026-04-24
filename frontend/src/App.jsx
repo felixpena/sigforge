@@ -116,10 +116,20 @@ export default function App() {
     }
   }, [])
 
-  const { connected } = useWebSocket(handleMessage)
+  const { connected, reconnecting } = useWebSocket(handleMessage)
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-forge-bg" style={{ maxHeight: '100vh' }}>
+
+      {/* ── Reconnecting Overlay ─────────────────────────────────────── */}
+      {reconnecting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="bg-forge-panel border border-forge-yellow/40 rounded px-6 py-3 flex items-center gap-3 shadow-lg">
+            <div className="w-2 h-2 rounded-full bg-forge-yellow animate-pulse" />
+            <span className="text-sm font-bold text-forge-yellow tracking-widest">RECONNECTING...</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Top Bar ─────────────────────────────────────────────────────── */}
       <header className="h-9 shrink-0 border-b border-forge-border flex items-center justify-between px-4">

@@ -13,28 +13,44 @@ function getWsUrl() {
 }
 
 const WS_URL = getWsUrl()
-const RECONNECT_DELAY = 3000
-const MAX_RECONNECT_DELAY = 30000
+
+// Reconnect immediately on first disconnect, then back off up to 5s max
+const INITIAL_DELAY = 0
+const BASE_DELAY = 500
+const MAX_DELAY = 5000
 
 export function useWebSocket(onMessage) {
   const ws = useRef(null)
   const reconnectTimeout = useRef(null)
-  const reconnectDelay = useRef(RECONNECT_DELAY)
+  const attemptRef = useRef(0)
   const onMessageRef = useRef(onMessage)
+  const unmountedRef = useRef(false)
   const [connected, setConnected] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
 
   onMessageRef.current = onMessage
 
+  const getDelay = (attempt) => {
+    if (attempt === 0) return INITIAL_DELAY
+    // Exponential backoff: 500ms, 1s, 2s, 4s, 5s (capped)
+    return Math.min(BASE_DELAY * Math.pow(2, attempt - 1), MAX_DELAY)
+  }
+
   const connect = useCallback(() => {
+    if (unmountedRef.current) return
+    if (ws.current?.readyState === WebSocket.CONNECTING) return
     if (ws.current?.readyState === WebSocket.OPEN) return
 
     try {
       const socket = new WebSocket(WS_URL)
 
       socket.onopen = () => {
+        if (unmountedRef.current) { socket.close(); return }
+        attemptRef.current = 0
         setConnected(true)
-        reconnectDelay.current = RECONNECT_DELAY
-        // Send ping every 20s to keep alive
+        setReconnecting(false)
+
+        // Keepalive ping every 20s
         const pingInterval = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send('ping')
@@ -49,45 +65,55 @@ export function useWebSocket(onMessage) {
         try {
           const data = JSON.parse(event.data)
           onMessageRef.current?.(data)
-        } catch (e) {
-          // pong or non-JSON
+        } catch (_) {
+          // pong or non-JSON — ignore
         }
       }
 
       socket.onclose = () => {
-        setConnected(false)
         if (socket._pingInterval) clearInterval(socket._pingInterval)
+        if (unmountedRef.current) return
+        setConnected(false)
         scheduleReconnect()
       }
 
       socket.onerror = () => {
+        // onclose fires immediately after onerror — let it handle reconnect
         socket.close()
       }
 
       ws.current = socket
-    } catch (e) {
+    } catch (_) {
       scheduleReconnect()
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const scheduleReconnect = useCallback(() => {
+    if (unmountedRef.current) return
     if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current)
+
+    const attempt = attemptRef.current
+    const delay = getDelay(attempt)
+    attemptRef.current = attempt + 1
+    setReconnecting(true)
+
     reconnectTimeout.current = setTimeout(() => {
-      reconnectDelay.current = Math.min(reconnectDelay.current * 1.5, MAX_RECONNECT_DELAY)
-      connect()
-    }, reconnectDelay.current)
-  }, [connect])
+      if (!unmountedRef.current) connect()
+    }, delay)
+  }, [connect]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    unmountedRef.current = false
     connect()
     return () => {
+      unmountedRef.current = true
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current)
       if (ws.current) {
-        ws.current.onclose = null // prevent reconnect on unmount
+        ws.current.onclose = null // suppress reconnect on intentional unmount
         ws.current.close()
       }
     }
   }, [connect])
 
-  return { connected }
+  return { connected, reconnecting }
 }
