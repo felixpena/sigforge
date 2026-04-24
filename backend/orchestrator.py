@@ -246,7 +246,14 @@ class Orchestrator:
         question = ws.get("market_question", "")[:60]
         direction = ws.get("direction", "YES")
         price = float(ws.get("entry_price") or 0)
-        confidence = float(ws.get("confidence") or 55)
+        confidence = float(ws.get("confidence") or 60)
+
+        # Edge scales with wallet count: 1 wallet = 10%, 3 = 30%, 5 = 50%
+        edge = wallet_count * 10.0
+
+        # Signal-type-specific conviction thresholds
+        min_conviction = {"STRONG_CLUSTER": 30, "CLUSTER": 40}.get(signal_type, 50)
+        recommendation = "TRADE" if confidence >= min_conviction else "MONITOR"
 
         return SignalOutput(
             market_id=ws.get("market_id", ""),
@@ -254,16 +261,17 @@ class Orchestrator:
             direction=direction,
             true_probability=price,
             market_probability=price,
-            edge=0.0,
+            edge=edge,
             conviction=confidence,
             evidence=[],
             base_rate="smart_wallet_cluster",
             invalidation="Wallets exit or reverse position",
             time_sensitivity="IMMEDIATE",
-            recommendation="TRADE" if confidence >= 65 else "MONITOR",
+            recommendation=recommendation,
             reasoning=(
                 f"{signal_type} signal: {wallet_count} wallets "
-                f"(avg PnL ${avg_pnl:.0f}) entered {direction} at {price:.3f}"
+                f"(avg PnL ${avg_pnl:.0f}) entered {direction} at {price:.3f} "
+                f"edge={edge:.0f}% conviction={confidence}"
             ),
         )
 

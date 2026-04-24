@@ -192,13 +192,13 @@ class WalletTrackerAgent:
 
         if wallet_count >= self.CLUSTER_STRONG:
             signal_type = "STRONG_CLUSTER"
-            confidence = 85
+            confidence = 90
         elif wallet_count >= self.CLUSTER_MIN:
             signal_type = "CLUSTER"
-            confidence = 70
+            confidence = 75
         else:
             signal_type = "WALLET_COPY"
-            confidence = 55
+            confidence = 60
 
         signal = {
             "signal_type": signal_type,
