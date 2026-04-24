@@ -161,8 +161,15 @@ async def websocket_endpoint(ws: WebSocket):
                 try:
                     # Wait up to 60s for any client message before giving up
                     data = await asyncio.wait_for(ws.receive_text(), timeout=60)
-                    if data == "ping":
+                    if data == "ping" or data == '{"type": "ping"}':
                         await ws.send_text("pong")
+                    elif data.startswith("{"):
+                        try:
+                            msg = json.loads(data)
+                            if msg.get("type") == "ping":
+                                await ws.send_text("pong")
+                        except Exception:
+                            pass
                 except asyncio.TimeoutError:
                     # No message in 60s — send an extra server ping
                     try:

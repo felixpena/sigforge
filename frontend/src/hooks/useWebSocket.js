@@ -50,14 +50,14 @@ export function useWebSocket(onMessage) {
         setConnected(true)
         setReconnecting(false)
 
-        // Keepalive ping every 20s
+        // Keepalive ping every 10s
         const pingInterval = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send('ping')
+            socket.send(JSON.stringify({ type: 'ping' }))
           } else {
             clearInterval(pingInterval)
           }
-        }, 20000)
+        }, 10000)
         socket._pingInterval = pingInterval
       }
 
