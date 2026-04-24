@@ -125,9 +125,22 @@ class Orchestrator:
             signal: SignalOutput = signal_result
             await self._emit("signal", signal.model_dump())
 
+            print(
+                f"[ORCHESTRATOR] SIGNAL result: market={signal.market_id} "
+                f"recommendation={signal.recommendation} conviction={signal.conviction} "
+                f"direction={signal.direction} edge={signal.edge}"
+            )
+            await self._log_system(
+                f"SIGNAL result: recommendation={signal.recommendation} "
+                f"conviction={signal.conviction} direction={signal.direction} "
+                f"edge={signal.edge:.3f} — {opp.question[:50]}",
+                agent="SIGNAL"
+            )
+
             if signal.recommendation not in ("TRADE",):
                 await self._log_system(
-                    f"SIGNAL: {signal.recommendation} — {opp.question[:50]}",
+                    f"SIGNAL gated: {signal.recommendation} (conviction={signal.conviction}, "
+                    f"min_conviction={settings.min_conviction}) — {opp.question[:50]}",
                     agent="SIGNAL"
                 )
                 continue
