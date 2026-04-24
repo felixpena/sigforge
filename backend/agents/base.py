@@ -47,6 +47,8 @@ class BaseAgent:
         await rc.log_agent_event(entry)
         return entry
 
+    CLAUDE_TIMEOUT_SECONDS = 30
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
     async def _call_claude(
         self,
@@ -56,8 +58,11 @@ class BaseAgent:
     ) -> str:
         """Call Claude via the synchronous client in a thread pool."""
         client = get_anthropic_client()
+        model = settings.claude_model
+        print(f"[{self.name}] Calling Claude model={model} max_tokens={max_tokens}")
+
         kwargs = {
-            "model": settings.claude_model,
+            "model": model,
             "max_tokens": max_tokens,
             "system": self.system_prompt,
             "messages": [{"role": "user", "content": user_message}],
@@ -65,7 +70,14 @@ class BaseAgent:
         if tools:
             kwargs["tools"] = tools
 
-        response = await asyncio.to_thread(client.messages.create, **kwargs)
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(client.messages.create, **kwargs),
+                timeout=self.CLAUDE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            print(f"[{self.name}] ERROR: Claude API call timed out after {self.CLAUDE_TIMEOUT_SECONDS}s (model={model})")
+            raise
 
         # Extract text from response
         for block in response.content:
