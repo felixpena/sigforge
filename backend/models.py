@@ -38,8 +38,8 @@ class MarketOpportunity(BaseModel):
     implied_probability: float
     volume_24h: float
     liquidity: float
-    anomaly_score: float
-    anomaly_type: Literal["price_drift", "volume_spike", "liquidity_gap", "correlation_divergence"]
+    anomaly_score: float = 50.0
+    anomaly_type: Literal["price_drift", "volume_spike", "liquidity_gap", "correlation_divergence"] = "price_drift"
     time_to_resolution: str
     resolution_criteria: str
     priority: Literal["HIGH", "MEDIUM", "LOW"]
