@@ -50,7 +50,14 @@ class MarketState(BaseModel):
     total_volume_session: float
     avg_liquidity: float
     dominant_category: str
-    session_bias: Literal["RISK_ON", "RISK_OFF", "NEUTRAL"]
+    session_bias: Literal["RISK_ON", "RISK_OFF", "NEUTRAL"] = "NEUTRAL"
+
+    @field_validator("session_bias", mode="before")
+    @classmethod
+    def normalize_session_bias(cls, v):
+        if isinstance(v, str) and v.upper() in ("RISK_ON", "RISK_OFF", "NEUTRAL"):
+            return v.upper()
+        return "NEUTRAL"
 
 
 class ScannerOutput(BaseModel):
