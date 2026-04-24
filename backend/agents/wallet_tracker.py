@@ -95,6 +95,8 @@ class WalletTrackerAgent:
             print(f"[WALLET] Error fetching leaderboard: {e}")
             await self._log("WARN", f"Leaderboard refresh failed: {e}")
 
+    MAX_SIGNALS_PER_CYCLE = 3
+
     # ─── Trade Polling ────────────────────────────────────────────────────────
 
     async def _poll_wallet_trades(self):
@@ -113,7 +115,56 @@ class WalletTrackerAgent:
         if errors:
             await self._log("WARN", f"Trade poll: {ok}/{len(wallets)} wallets responded")
 
-    async def _check_wallet_trades(self, wallet: dict):
+        # Collect candidate signals returned from each wallet check
+        candidates: list[dict] = []
+        for r in results:
+            if isinstance(r, list):
+                candidates.extend(r)
+
+        if not candidates:
+            return
+
+        # Deduplicate by market_id — keep the entry with the highest wallet_count
+        best: dict[str, dict] = {}
+        for sig in candidates:
+            mid = sig["market_id"]
+            if mid not in best or sig["wallet_count"] > best[mid]["wallet_count"]:
+                best[mid] = sig
+
+        # Rank by wallet_count DESC, then confidence DESC
+        ranked = sorted(best.values(), key=lambda s: (s["wallet_count"], s["confidence"]), reverse=True)
+
+        # Skip markets already sitting in the queue (prevents re-queuing same market)
+        queued_ids = await rc.get_queued_wallet_market_ids()
+
+        pushed = 0
+        for sig in ranked:
+            if pushed >= self.MAX_SIGNALS_PER_CYCLE:
+                break
+            if sig["market_id"] in queued_ids:
+                print(f"[WALLET] Dedup: skipping already-queued market={sig['market_id'][:24]}")
+                continue
+
+            await rc.push_wallet_signal(sig)
+            queued_ids.add(sig["market_id"])  # prevent double-push within same cycle
+            pushed += 1
+
+            log_msg = (
+                f"[WALLET] {sig['signal_type']} market={sig['market_id'][:24]} "
+                f"wallets={sig['wallet_count']} confidence={sig['confidence']}"
+            )
+            await self._log("INFO", log_msg)
+            print(f"[WALLET TRACKER] {log_msg} direction={sig['direction']}")
+            try:
+                await self.broadcast(WSMessage(type="wallet_signal", payload=sig).model_dump())
+            except Exception:
+                pass
+
+        skipped = len(ranked) - pushed
+        print(f"[WALLET] Emitted {pushed} signal(s) this cycle ({skipped} deduplicated/skipped)")
+
+    async def _check_wallet_trades(self, wallet: dict) -> list[dict]:
+        """Returns candidate signal dicts for new trades. Empty list if none or first poll."""
         address = wallet["address"]
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as c:
@@ -123,12 +174,11 @@ class WalletTrackerAgent:
 
             trades = data if isinstance(data, list) else data.get("history", data.get("trades", []))
             if not isinstance(trades, list):
-                return
+                return []
 
         except Exception:
-            return
+            return []
 
-        # Build trade ID set — use id, transactionHash, or a composite key
         def trade_id(t: dict) -> str:
             return str(
                 t.get("id")
@@ -138,21 +188,27 @@ class WalletTrackerAgent:
 
         known_ids = await rc.get_wallet_trade_ids(address)
         current_ids = {trade_id(t) for t in trades}
-        new_trades = [t for t in trades if trade_id(t) not in known_ids]
 
-        # Save baseline on first poll — don't emit signals for historical trades
+        # First poll — save baseline only, no signals
         if not known_ids:
             await rc.set_wallet_trade_ids(address, current_ids)
-            return
+            print(f"[WALLET] Baseline set for {address[:10]}... ({len(current_ids)} trades)")
+            return []
 
+        new_trades = [t for t in trades if trade_id(t) not in known_ids]
         await rc.set_wallet_trade_ids(address, current_ids)
 
+        signals = []
         for trade in new_trades:
-            await self._process_new_trade(wallet, trade)
+            sig = self._build_signal(wallet, trade)
+            if sig:
+                signals.append(sig)
+        return signals
 
     # ─── Signal Generation ────────────────────────────────────────────────────
 
-    async def _process_new_trade(self, wallet: dict, trade: dict):
+    def _build_signal(self, wallet: dict, trade: dict) -> Optional[dict]:
+        """Updates _recent_entries for cluster tracking and returns a signal dict."""
         market_id = str(
             trade.get("conditionId")
             or trade.get("market")
@@ -160,7 +216,7 @@ class WalletTrackerAgent:
             or ""
         )
         if not market_id:
-            return
+            return None
 
         question = str(
             trade.get("title")
@@ -200,7 +256,7 @@ class WalletTrackerAgent:
             signal_type = "WALLET_COPY"
             confidence = 60
 
-        signal = {
+        return {
             "signal_type": signal_type,
             "market_id": market_id,
             "market_question": question,
@@ -212,21 +268,6 @@ class WalletTrackerAgent:
             "entry_price": price,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-
-        await rc.push_wallet_signal(signal)
-
-        log_msg = (
-            f"[WALLET] {signal_type} market={market_id[:24]} "
-            f"wallets={wallet_count} confidence={confidence}"
-        )
-        await self._log("INFO", log_msg)
-        print(f"[WALLET TRACKER] {log_msg} direction={direction} price={price}")
-
-        try:
-            msg = WSMessage(type="wallet_signal", payload=signal)
-            await self.broadcast(msg.model_dump())
-        except Exception:
-            pass
 
     def _prune_stale_entries(self):
         cutoff = datetime.now(timezone.utc).timestamp() - self.CLUSTER_WINDOW_SECONDS

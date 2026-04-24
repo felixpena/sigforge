@@ -213,6 +213,20 @@ async def push_wallet_signal(signal: dict):
     await r.ltrim("sigforge:wallets:queue", 0, 99)
 
 
+async def get_queued_wallet_market_ids() -> set[str]:
+    """Return the set of market_ids currently sitting in the wallet signal queue."""
+    r = await get_redis()
+    raw = await r.lrange("sigforge:wallets:queue", 0, -1)
+    ids = set()
+    for item in raw:
+        try:
+            ids.add(json.loads(item).get("market_id", ""))
+        except Exception:
+            pass
+    ids.discard("")
+    return ids
+
+
 async def drain_wallet_signals() -> list[dict]:
     """Pop all pending wallet signals from queue (FIFO)."""
     r = await get_redis()
