@@ -167,7 +167,7 @@ Return ONLY the JSON output, no other text."""
         print(f"[SCANNER] Sending {payload_markets} markets to Claude ({payload_chars:,} chars)")
 
         try:
-            raw = await self._call_claude(user_message, max_tokens=2048)
+            raw = await self._call_claude(user_message, max_tokens=4096)
             print(f"[SCANNER RAW] {raw[:500]}")
             result = await self._parse_output(raw)
 
