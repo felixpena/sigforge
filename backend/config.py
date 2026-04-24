@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     min_anomaly_score: float = 65.0
     min_conviction: float = 65.0
 
-    claude_model: str = "claude-sonnet-4-20250514"
+    claude_model: str = "claude-sonnet-4-5"
 
     class Config:
         env_file = ".env"
