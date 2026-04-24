@@ -76,6 +76,9 @@ class ScannerAgent(BaseAgent):
             f"(liquidity ≥ ${settings.min_liquidity_usd:,.0f}, active)",
         )
 
+        # Debug: inspect what category values Polymarket actually returns
+        print(f"[SCANNER DEBUG] Sample market categories: {[m.get('category', 'NO_CATEGORY') for m in eligible[:5]]}")
+
         # Category diversity: prioritize political/economic/crypto/regulatory, cap sports at 20%
         _PRIORITY_CATS = {"political", "politics", "economic", "economics", "crypto",
                           "cryptocurrency", "regulatory", "regulation", "finance"}
