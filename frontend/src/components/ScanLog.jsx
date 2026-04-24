@@ -13,6 +13,7 @@ const AGENT_COLORS = {
   SIGNAL: 'text-forge-purple',
   RISK: 'text-forge-yellow',
   EXECUTION: 'text-forge-accent',
+  WALLET: 'text-orange-400',
   SYSTEM: 'text-forge-muted',
 }
 
@@ -49,7 +50,11 @@ export function ScanLog({ entries }) {
               <span className={`shrink-0 w-16 ${AGENT_COLORS[entry.agent] || 'text-forge-muted'}`}>
                 {entry.agent}
               </span>
-              <span className={LEVEL_STYLES[entry.level] || 'text-forge-text'}>
+              <span className={
+                entry.agent === 'WALLET'
+                  ? 'text-orange-300'
+                  : (LEVEL_STYLES[entry.level] || 'text-forge-text')
+              }>
                 {entry.message}
               </span>
             </div>

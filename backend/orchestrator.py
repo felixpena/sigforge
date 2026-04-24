@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Callable, Awaitable, Set
 
-from agents import ScannerAgent, SignalAgent, RiskAgent, ExecutionAgent
+from agents import ScannerAgent, SignalAgent, RiskAgent, ExecutionAgent, WalletTrackerAgent
 from models import (
     AgentLogEntry, PortfolioState, ScannerOutput,
     SignalOutput, RiskOutput, ExecutionOutput, WSMessage
@@ -25,16 +25,22 @@ class Orchestrator:
         self.signal = SignalAgent()
         self.risk = RiskAgent()
         self.execution = ExecutionAgent()
+        self.wallet_tracker = WalletTrackerAgent(broadcast=broadcast)
 
         self._running = False
         self._cycle_count = 0
         self._ws_clients: Set = set()
+        self._wallet_task: Optional[asyncio.Task] = None
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
     async def start(self):
         self._running = True
         await self._log_system("System online — PAPER_TRADING=" + str(settings.paper_trading))
+
+        # Start wallet tracker as independent background task
+        self._wallet_task = asyncio.create_task(self.wallet_tracker.start())
+        print("[SIGFORGE] Wallet tracker started")
 
         # Initialize portfolio if not exists
         portfolio = await rc.get_portfolio()
@@ -63,12 +69,18 @@ class Orchestrator:
 
     def stop(self):
         self._running = False
+        self.wallet_tracker.stop()
+        if self._wallet_task and not self._wallet_task.done():
+            self._wallet_task.cancel()
 
     # ─── Main Cycle ───────────────────────────────────────────────────────────
 
     async def _run_cycle(self):
         await self._log_system(f"Cycle #{self._cycle_count + 1} starting")
         await self._emit("cycle_start", {"cycle": self._cycle_count + 1})
+
+        # ── Step 0: Drain wallet signal queue (bypasses SCANNER + SIGNAL) ─
+        await self._process_wallet_signals()
 
         # ── Step 1: Fetch markets ──────────────────────────────────────────
         try:
@@ -175,6 +187,85 @@ class Orchestrator:
 
         # ── Step 6: Update portfolio snapshot ───────────────────────────
         await self._update_portfolio_snapshot()
+
+    # ─── Wallet Signal Processing ─────────────────────────────────────────────
+
+    async def _process_wallet_signals(self):
+        wallet_signals = await rc.drain_wallet_signals()
+        if not wallet_signals:
+            return
+
+        portfolio = await rc.get_portfolio()
+        open_positions = await rc.get_open_positions()
+        open_pos_dicts = [p.model_dump() for p in open_positions]
+        session_stats = await rc.get_all_stats()
+
+        for ws in wallet_signals:
+            signal_type = ws.get("signal_type", "WALLET_COPY")
+            market_id = ws.get("market_id", "")
+            wallet_count = ws.get("wallet_count", 1)
+            confidence = ws.get("confidence", 55)
+
+            await self._log_system(
+                f"[WALLET] {signal_type} market={market_id[:24]} "
+                f"wallets={wallet_count} confidence={confidence}",
+                agent="WALLET",
+            )
+            print(
+                f"[ORCHESTRATOR] Wallet signal: type={signal_type} market={market_id} "
+                f"wallets={wallet_count} confidence={confidence}"
+            )
+
+            # Convert wallet signal → synthetic SignalOutput → RISK agent
+            signal = self._wallet_to_signal_output(ws)
+            await self._emit("signal", signal.model_dump())
+
+            if not portfolio:
+                portfolio = await rc.init_portfolio()
+
+            risk_result = await self.risk.evaluate(signal, portfolio, open_pos_dicts, session_stats)
+            if not risk_result:
+                continue
+
+            print(f"[RISK/WALLET] Decision: {risk_result.decision} size={risk_result.approved_size} reason={risk_result.veto_reason}")
+            await self._emit("risk", risk_result.model_dump())
+
+            if risk_result.decision == "VETOED":
+                continue
+
+            exec_result = await self.execution.enter_trade(signal, risk_result)
+            if exec_result:
+                await self._emit("execution", exec_result.model_dump())
+                await self._update_portfolio_after_trade(risk_result.approved_size, portfolio)
+
+    @staticmethod
+    def _wallet_to_signal_output(ws: dict) -> SignalOutput:
+        signal_type = ws.get("signal_type", "WALLET_COPY")
+        wallet_count = ws.get("wallet_count", 1)
+        avg_pnl = ws.get("avg_wallet_pnl", 0)
+        question = ws.get("market_question", "")[:60]
+        direction = ws.get("direction", "YES")
+        price = float(ws.get("entry_price") or 0)
+        confidence = float(ws.get("confidence") or 55)
+
+        return SignalOutput(
+            market_id=ws.get("market_id", ""),
+            thesis=f"{signal_type}: {wallet_count} smart wallets entered {direction} — {question}",
+            direction=direction,
+            true_probability=price,
+            market_probability=price,
+            edge=0.0,
+            conviction=confidence,
+            evidence=[],
+            base_rate="smart_wallet_cluster",
+            invalidation="Wallets exit or reverse position",
+            time_sensitivity="IMMEDIATE",
+            recommendation="TRADE" if confidence >= 65 else "MONITOR",
+            reasoning=(
+                f"{signal_type} signal: {wallet_count} wallets "
+                f"(avg PnL ${avg_pnl:.0f}) entered {direction} at {price:.3f}"
+            ),
+        )
 
     # ─── Position Monitoring ──────────────────────────────────────────────────
 

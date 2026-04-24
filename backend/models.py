@@ -215,7 +215,7 @@ class PortfolioState(BaseModel):
 class AgentLogEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    agent: Literal["SCANNER", "SIGNAL", "RISK", "EXECUTION", "SYSTEM"]
+    agent: Literal["SCANNER", "SIGNAL", "RISK", "EXECUTION", "WALLET", "SYSTEM"]
     level: Literal["INFO", "WARN", "ERROR", "TRADE", "VETO"] = "INFO"
     message: str
     data: Optional[dict] = None

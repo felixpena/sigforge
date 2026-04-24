@@ -179,6 +179,55 @@ async def get_last_scan() -> Optional[dict]:
     return json.loads(val) if val else None
 
 
+# ─── Wallet Tracker ──────────────────────────────────────────────────────────
+
+async def set_smart_wallets(wallets: list[dict]):
+    r = await get_redis()
+    await r.set("sigforge:wallets:smart_list", json.dumps(wallets), ex=7200)
+
+
+async def get_smart_wallets() -> list[dict]:
+    r = await get_redis()
+    val = await r.get("sigforge:wallets:smart_list")
+    return json.loads(val) if val else []
+
+
+async def get_wallet_trade_ids(address: str) -> set[str]:
+    r = await get_redis()
+    val = await r.get(f"sigforge:wallets:trades:{address.lower()}")
+    return set(json.loads(val)) if val else set()
+
+
+async def set_wallet_trade_ids(address: str, ids: set[str]):
+    r = await get_redis()
+    await r.set(
+        f"sigforge:wallets:trades:{address.lower()}",
+        json.dumps(list(ids)),
+        ex=3600,
+    )
+
+
+async def push_wallet_signal(signal: dict):
+    r = await get_redis()
+    await r.lpush("sigforge:wallets:queue", json.dumps(signal))
+    await r.ltrim("sigforge:wallets:queue", 0, 99)
+
+
+async def drain_wallet_signals() -> list[dict]:
+    """Pop all pending wallet signals from queue (FIFO)."""
+    r = await get_redis()
+    signals = []
+    while True:
+        val = await r.rpop("sigforge:wallets:queue")
+        if val is None:
+            break
+        try:
+            signals.append(json.loads(val))
+        except Exception:
+            pass
+    return signals
+
+
 # ─── Session Stats ────────────────────────────────────────────────────────────
 
 async def increment_stat(key: str, amount: float = 1.0):
