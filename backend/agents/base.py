@@ -2,7 +2,9 @@
 Base agent class — wraps Anthropic Claude API calls with
 structured JSON output parsing, retry logic, and logging.
 """
+import asyncio
 import json
+import os
 import re
 from typing import Optional, Type, TypeVar
 from datetime import datetime
@@ -17,13 +19,16 @@ from models import AgentLogEntry
 
 T = TypeVar("T", bound=BaseModel)
 
-_client: Optional[anthropic.AsyncAnthropic] = None
+_client: Optional[anthropic.Anthropic] = None
 
 
-def get_anthropic_client() -> anthropic.AsyncAnthropic:
+def get_anthropic_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        key_preview = (api_key[:8] + "...") if api_key else "NOT SET"
+        print(f"[ANTHROPIC] Initializing client — API key: {key_preview}")
+        _client = anthropic.Anthropic(api_key=api_key)
     return _client
 
 
@@ -49,7 +54,7 @@ class BaseAgent:
         tools: Optional[list] = None,
         max_tokens: int = 4096,
     ) -> str:
-        """Call Claude and return the text response."""
+        """Call Claude via the synchronous client in a thread pool."""
         client = get_anthropic_client()
         kwargs = {
             "model": settings.claude_model,
@@ -60,7 +65,7 @@ class BaseAgent:
         if tools:
             kwargs["tools"] = tools
 
-        response = await client.messages.create(**kwargs)
+        response = await asyncio.to_thread(client.messages.create, **kwargs)
 
         # Extract text from response
         for block in response.content:
