@@ -59,13 +59,17 @@ class WalletTrackerAgent:
     # ─── Leaderboard ──────────────────────────────────────────────────────────
 
     async def _refresh_smart_wallets(self):
+        print(f"[WALLET] Fetching leaderboard from data-api.polymarket.com")
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as c:
                 r = await c.get(f"{DATA_URL}/leaderboard")
+                print(f"[WALLET] Leaderboard response: {r.status_code}")
                 r.raise_for_status()
                 data = r.json()
 
             entries = data if isinstance(data, list) else data.get("data", [])
+            print(f"[WALLET] Leaderboard raw entries: {len(entries)}")
+
             wallets = []
             for entry in entries:
                 addr = (
@@ -80,14 +84,16 @@ class WalletTrackerAgent:
                 if len(wallets) >= self.TOP_WALLETS:
                     break
 
+            print(f"[WALLET] Loaded {len(wallets)} smart wallets")
             if wallets:
                 await rc.set_smart_wallets(wallets)
                 await self._log("INFO", f"Smart wallet list updated: {len(wallets)} wallets tracked")
-                print(f"[WALLET] Leaderboard refreshed — tracking {len(wallets)} wallets")
             else:
+                print(f"[WALLET] No valid 0x addresses found in leaderboard — sample: {entries[:2]}")
                 await self._log("WARN", "Leaderboard returned no valid wallet addresses")
 
         except Exception as e:
+            print(f"[WALLET] Error fetching leaderboard: {e}")
             await self._log("WARN", f"Leaderboard refresh failed: {e}")
 
     # ─── Trade Polling ────────────────────────────────────────────────────────
@@ -95,14 +101,18 @@ class WalletTrackerAgent:
     async def _poll_wallet_trades(self):
         wallets = await rc.get_smart_wallets()
         if not wallets:
+            print(f"[WALLET] No smart wallets in Redis yet — skipping trade poll")
             return
 
+        print(f"[WALLET] Polling trades for {len(wallets)} smart wallets")
         tasks = [self._check_wallet_trades(w) for w in wallets]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         errors = sum(1 for r in results if isinstance(r, Exception))
+        ok = len(wallets) - errors
+        print(f"[WALLET] Trade poll complete: {ok}/{len(wallets)} wallets OK, {errors} errors")
         if errors:
-            await self._log("WARN", f"Trade poll: {len(wallets) - errors}/{len(wallets)} wallets responded")
+            await self._log("WARN", f"Trade poll: {ok}/{len(wallets)} wallets responded")
 
     async def _check_wallet_trades(self, wallet: dict):
         address = wallet["address"]
