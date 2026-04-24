@@ -204,39 +204,51 @@ class Orchestrator:
             signal_type = ws.get("signal_type", "WALLET_COPY")
             market_id = ws.get("market_id", "")
             wallet_count = ws.get("wallet_count", 1)
-            confidence = ws.get("confidence", 55)
+            confidence = ws.get("confidence", 60)
 
             await self._log_system(
                 f"[WALLET] {signal_type} market={market_id[:24]} "
                 f"wallets={wallet_count} confidence={confidence}",
                 agent="WALLET",
             )
-            print(
-                f"[ORCHESTRATOR] Wallet signal: type={signal_type} market={market_id} "
-                f"wallets={wallet_count} confidence={confidence}"
-            )
 
-            # Convert wallet signal → synthetic SignalOutput → RISK agent
+            # Convert wallet signal → synthetic SignalOutput
             signal = self._wallet_to_signal_output(ws)
             await self._emit("signal", signal.model_dump())
 
             if not portfolio:
                 portfolio = await rc.init_portfolio()
 
-            risk_result = await self.risk.evaluate(signal, portfolio, open_pos_dicts, session_stats)
-            if not risk_result:
-                continue
+            # Auto-approve with conservative sizing — bypass RISK agent
+            approved_size = {"STRONG_CLUSTER": 50.0, "CLUSTER": 25.0}.get(signal_type, 10.0)
+            risk_result = RiskOutput(
+                market_id=market_id,
+                decision="APPROVED",
+                original_size=approved_size,
+                approved_size=approved_size,
+                kelly_fraction=0.1,
+                portfolio_concentration_after=0.0,
+                correlation_risk="LOW",
+                risk_delta="NEUTRAL",
+                session_health=portfolio.session_health if portfolio else "GREEN",
+                notes=f"Wallet auto-approve: {signal_type}",
+            )
 
-            print(f"[RISK/WALLET] Decision: {risk_result.decision} size={risk_result.approved_size} reason={risk_result.veto_reason}")
+            print(
+                f"[WALLET AUTO-APPROVE] signal_type={signal_type} "
+                f"market={market_id[:24]} size=${approved_size:.0f}"
+            )
+            await self._log_system(
+                f"[WALLET AUTO-APPROVE] signal_type={signal_type} "
+                f"market={market_id[:24]} size=${approved_size:.0f}",
+                agent="WALLET",
+            )
             await self._emit("risk", risk_result.model_dump())
-
-            if risk_result.decision == "VETOED":
-                continue
 
             exec_result = await self.execution.enter_trade(signal, risk_result)
             if exec_result:
                 await self._emit("execution", exec_result.model_dump())
-                await self._update_portfolio_after_trade(risk_result.approved_size, portfolio)
+                await self._update_portfolio_after_trade(approved_size, portfolio)
 
     @staticmethod
     def _wallet_to_signal_output(ws: dict) -> SignalOutput:
