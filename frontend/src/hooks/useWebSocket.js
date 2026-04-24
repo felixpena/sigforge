@@ -1,6 +1,18 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 
-const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8000') + '/ws'
+function getWsUrl() {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL + '/ws'
+  }
+  // Derive from current page host so it works in Docker and any deployment
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace(/^https?:/, protocol)
+    : `${protocol}//${window.location.hostname}:8000`
+  return host + '/ws'
+}
+
+const WS_URL = getWsUrl()
 const RECONNECT_DELAY = 3000
 const MAX_RECONNECT_DELAY = 30000
 
