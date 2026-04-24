@@ -76,24 +76,32 @@ class ScannerAgent(BaseAgent):
             f"(liquidity ≥ ${settings.min_liquidity_usd:,.0f}, active)",
         )
 
-        # Debug: inspect what category values Polymarket actually returns
-        print(f"[SCANNER DEBUG] Sample market categories: {[m.get('category', 'NO_CATEGORY') for m in eligible[:5]]}")
-
-        # Category diversity: prioritize political/economic/crypto/regulatory, cap sports at 20%
-        _PRIORITY_CATS = {"political", "politics", "economic", "economics", "crypto",
-                          "cryptocurrency", "regulatory", "regulation", "finance"}
-        _SPORTS_CATS = {"sports", "sport"}
+        # Category diversity via question-text keywords (Polymarket returns 'general' for all categories)
+        _PRIORITY_KW = [
+            'fed', 'rate', 'bitcoin', 'crypto', 'election', 'president', 'congress',
+            'senate', 'gdp', 'inflation', 'trump', 'biden', 'harris', 'regulation',
+            'sec', 'etf', 'recession',
+        ]
+        _SPORTS_KW = [
+            'fifa', 'world cup', 'nba', 'nfl', 'premier league', 'champions league',
+            'soccer', 'football', 'basketball',
+        ]
         _SPORTS_CAP = 20
 
         priority_markets, sports_markets, other_markets = [], [], []
         for m in eligible:
-            cat = (m.get("category") or "").lower()
-            if any(kw in cat for kw in _PRIORITY_CATS):
+            q = (m.get("question") or "").lower()
+            if any(kw in q for kw in _PRIORITY_KW):
                 priority_markets.append(m)
-            elif any(kw in cat for kw in _SPORTS_CATS):
+            elif any(kw in q for kw in _SPORTS_KW):
                 sports_markets.append(m)
             else:
                 other_markets.append(m)
+
+        print(
+            f"[SCANNER] Category mix (by keyword): {len(priority_markets)} priority, "
+            f"{len(other_markets)} other, {len(sports_markets)} sports"
+        )
 
         # Fill 50 slots: priority first, then other, then sports (capped at 20)
         diverse: list[dict] = []
@@ -110,8 +118,8 @@ class ScannerAgent(BaseAgent):
 
         await self._log(
             "INFO",
-            f"Category mix: {len(priority_markets)} priority, {len(other_markets)} other, "
-            f"{len(sports_markets)} sports → {len(diverse)} diverse markets selected",
+            f"Category mix (keyword): {len(priority_markets)} priority, {len(other_markets)} other, "
+            f"{len(sports_markets)} sports → {len(diverse)} selected",
         )
 
         # Build minimal summaries — only fields Claude needs
