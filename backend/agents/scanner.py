@@ -3,6 +3,7 @@ SCANNER Agent — Market Intelligence
 Monitors prediction markets in real-time and identifies anomalies.
 """
 import json
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -120,6 +121,10 @@ Maximum opportunities: {settings.max_opportunities_per_scan}
 
 Return ONLY the JSON output, no other text."""
 
+        payload_chars = len(user_message)
+        payload_markets = len(market_summaries)
+        print(f"[SCANNER] Sending {payload_markets} markets to Claude ({payload_chars:,} chars)")
+
         try:
             raw = await self._call_claude(user_message, max_tokens=4096)
             result = await self._parse_output(raw)
@@ -149,5 +154,27 @@ Return ONLY the JSON output, no other text."""
             return result
 
         except Exception as e:
-            await self._log("ERROR", f"Scanner failed: {e}")
+            exc_type = type(e).__name__
+            exc_msg = str(e)
+
+            # Extract full details from Anthropic API errors
+            status_code = getattr(e, "status_code", None)
+            response_body = getattr(e, "response", None)
+            error_body = None
+            if response_body is not None:
+                try:
+                    error_body = response_body.json()
+                except Exception:
+                    error_body = str(response_body)
+
+            print(f"[SCANNER ERROR] {exc_type}: {exc_msg}")
+            print(f"[SCANNER ERROR] status_code={status_code}")
+            print(f"[SCANNER ERROR] response_body={error_body}")
+            print(f"[SCANNER ERROR] payload_markets={payload_markets}, payload_chars={payload_chars:,}")
+            print(f"[SCANNER ERROR] Full traceback:\n{traceback.format_exc()}")
+
+            await self._log(
+                "ERROR",
+                f"Scanner failed: [{exc_type}] {exc_msg} | status={status_code} | markets={payload_markets} chars={payload_chars:,}",
+            )
             return None
