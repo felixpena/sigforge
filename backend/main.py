@@ -142,17 +142,55 @@ async def websocket_endpoint(ws: WebSocket):
         if last_scan:
             await ws.send_json(WSMessage(type="scan_complete", payload=last_scan).model_dump())
 
-        # Keep connection alive
-        while True:
-            try:
-                data = await asyncio.wait_for(ws.receive_text(), timeout=30)
-                # Handle ping from client
-                if data == "ping":
-                    await ws.send_text("pong")
-            except asyncio.TimeoutError:
-                await ws.send_json({"type": "heartbeat", "payload": {}, "timestamp": ""})
-            except WebSocketDisconnect:
-                break
+        # ── Server-side ping task — fires every 15s ──────────────────
+        async def heartbeat():
+            while True:
+                await asyncio.sleep(15)
+                try:
+                    await ws.send_json({
+                        "type": "heartbeat",
+                        "payload": {},
+                        "timestamp": asyncio.get_event_loop().time().__str__(),
+                    })
+                except Exception:
+                    break  # socket is dead — let receive loop detect it
+
+        # ── Receive loop — client pings answered, disconnects detected ─
+        async def receive():
+            while True:
+                try:
+                    # Wait up to 60s for any client message before giving up
+                    data = await asyncio.wait_for(ws.receive_text(), timeout=60)
+                    if data == "ping":
+                        await ws.send_text("pong")
+                except asyncio.TimeoutError:
+                    # No message in 60s — send an extra server ping
+                    try:
+                        await ws.send_json({"type": "heartbeat", "payload": {}, "timestamp": ""})
+                    except Exception:
+                        break
+                except WebSocketDisconnect:
+                    break
+                except Exception:
+                    break
+
+        # Run both tasks concurrently; cancel the other when one exits
+        heartbeat_task = asyncio.create_task(heartbeat())
+        receive_task = asyncio.create_task(receive())
+        try:
+            done, pending = await asyncio.wait(
+                {heartbeat_task, receive_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for task in (heartbeat_task, receive_task):
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
     except WebSocketDisconnect:
         pass
     finally:
