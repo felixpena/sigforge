@@ -87,41 +87,18 @@ class BaseAgent:
         return ""
 
     def _extract_json(self, text: str) -> dict:
-        """Extract JSON from Claude response, stripping all markdown before parsing."""
+        # Remove markdown code fences
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
         text = text.strip()
-
-        # 1. Try direct parse
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # 2. Strip all markdown code fences (```json, ```, etc.) and retry
-        clean = re.sub(r"```(?:json|JSON)?\s*", "", text)
-        clean = re.sub(r"\s*```", "", clean).strip()
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            pass
-
-        # 3. Extract outermost { } from the original text
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
+        # Find JSON object
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
             try:
-                return json.loads(text[start : end + 1])
+                return json.loads(text[start:end+1])
             except json.JSONDecodeError:
                 pass
-
-        # 4. Extract outermost { } from the stripped text
-        start = clean.find("{")
-        end = clean.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(clean[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-
         raise ValueError(f"Could not extract JSON from response: {text[:200]}")
 
     async def _parse_output(self, text: str) -> BaseModel:
