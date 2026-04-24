@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     session_bankroll_usd: float = 1000.0
 
     scan_interval_seconds: int = 30
-    max_opportunities_per_scan: int = 12
+    max_opportunities_per_scan: int = 5
     min_liquidity_usd: float = 5000.0
     min_anomaly_score: float = 65.0
     min_conviction: float = 65.0

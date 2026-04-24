@@ -84,6 +84,13 @@ class SignalOutput(BaseModel):
     recommendation: Literal["TRADE", "MONITOR", "PASS", "VETO"] = "PASS"
     reasoning: str = ""
 
+    @field_validator("direction", mode="before")
+    @classmethod
+    def normalize_direction(cls, v):
+        if isinstance(v, str) and v.upper() in ("YES", "NO"):
+            return v.upper()
+        return "YES"
+
     @field_validator("true_probability", "market_probability", "edge", "conviction", mode="before")
     @classmethod
     def coerce_float(cls, v):

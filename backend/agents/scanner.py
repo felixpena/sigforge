@@ -62,8 +62,13 @@ RULES:
 - Only flag opportunities with anomaly_score > 65
 - Never flag markets with liquidity < $5,000
 - Never flag markets resolving in < 2 hours
-- Maximum 12 opportunities per scan
-- Be conservative. A missed opportunity is better than a false signal."""
+- Maximum 5 opportunities per scan
+- Be conservative. A missed opportunity is better than a false signal.
+
+OUTPUT FORMAT:
+- Return ONLY a raw JSON object — no markdown, no code fences, no explanation
+- Do not wrap the JSON in ```json or ``` blocks
+- The very first character of your response must be { and the last must be }"""
 
 
 class ScannerAgent(BaseAgent):
@@ -91,9 +96,44 @@ class ScannerAgent(BaseAgent):
             f"(liquidity ≥ ${settings.min_liquidity_usd:,.0f}, active)",
         )
 
+        # Category diversity: prioritize political/economic/crypto/regulatory, cap sports at 20%
+        _PRIORITY_CATS = {"political", "politics", "economic", "economics", "crypto",
+                          "cryptocurrency", "regulatory", "regulation", "finance"}
+        _SPORTS_CATS = {"sports", "sport"}
+        _SPORTS_CAP = 20
+
+        priority_markets, sports_markets, other_markets = [], [], []
+        for m in eligible:
+            cat = (m.get("category") or "").lower()
+            if any(kw in cat for kw in _PRIORITY_CATS):
+                priority_markets.append(m)
+            elif any(kw in cat for kw in _SPORTS_CATS):
+                sports_markets.append(m)
+            else:
+                other_markets.append(m)
+
+        # Fill 100 slots: priority first, then other, then sports (capped at 20)
+        diverse: list[dict] = []
+        diverse.extend(priority_markets[:100])
+        slots = 100 - len(diverse)
+        if slots > 0:
+            diverse.extend(other_markets[:slots])
+        slots = 100 - len(diverse)
+        if slots > 0:
+            diverse.extend(sports_markets[: min(_SPORTS_CAP, slots)])
+
+        # Re-sort the selected set by liquidity
+        diverse.sort(key=lambda m: float(m.get("liquidity", 0) or 0), reverse=True)
+
+        await self._log(
+            "INFO",
+            f"Category mix: {len(priority_markets)} priority, {len(other_markets)} other, "
+            f"{len(sports_markets)} sports → {len(diverse)} diverse markets selected",
+        )
+
         # Build minimal summaries — only fields Claude needs
         market_summaries = []
-        for m in eligible[:100]:  # cap at 100 to stay within Claude token limits
+        for m in diverse[:100]:  # cap at 100 to stay within Claude token limits
             tokens = m.get("tokens", [])
             yes_price = next(
                 (t["price"] for t in tokens if t.get("outcome", "").upper() == "YES"), None
@@ -104,6 +144,7 @@ class ScannerAgent(BaseAgent):
             market_summaries.append({
                 "market_id": m.get("id", ""),
                 "question": m.get("question", "")[:100],
+                "category": m.get("category", ""),
                 "price": round(float(yes_price or 0), 4),
                 "volume_24h": round(float(m.get("volume_24h", 0) or 0), 2),
                 "liquidity": round(float(m.get("liquidity", 0) or 0), 2),
@@ -126,7 +167,8 @@ Return ONLY the JSON output, no other text."""
         print(f"[SCANNER] Sending {payload_markets} markets to Claude ({payload_chars:,} chars)")
 
         try:
-            raw = await self._call_claude(user_message, max_tokens=4096)
+            raw = await self._call_claude(user_message, max_tokens=2048)
+            print(f"[SCANNER RAW] {raw[:500]}")
             result = await self._parse_output(raw)
 
             # Filter by thresholds (enforce rules server-side)

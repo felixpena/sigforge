@@ -87,28 +87,40 @@ class BaseAgent:
         return ""
 
     def _extract_json(self, text: str) -> dict:
-        """Extract JSON from Claude response, handling markdown code blocks."""
-        # Try direct parse first
+        """Extract JSON from Claude response, stripping all markdown before parsing."""
         text = text.strip()
+
+        # 1. Try direct parse
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # Try extracting from code block
-        patterns = [
-            r"```json\s*([\s\S]*?)```",
-            r"```\s*([\s\S]*?)```",
-            r"\{[\s\S]*\}",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, text)
-            if match:
-                candidate = match.group(1) if "```" in pattern else match.group(0)
-                try:
-                    return json.loads(candidate.strip())
-                except json.JSONDecodeError:
-                    continue
+        # 2. Strip all markdown code fences (```json, ```, etc.) and retry
+        clean = re.sub(r"```(?:json|JSON)?\s*", "", text)
+        clean = re.sub(r"\s*```", "", clean).strip()
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            pass
+
+        # 3. Extract outermost { } from the original text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+
+        # 4. Extract outermost { } from the stripped text
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(clean[start : end + 1])
+            except json.JSONDecodeError:
+                pass
 
         raise ValueError(f"Could not extract JSON from response: {text[:200]}")
 
