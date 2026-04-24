@@ -13,24 +13,14 @@ from config import settings
 import redis_client as rc
 
 
-SCANNER_SYSTEM_PROMPT = """You are SCANNER, a specialized market intelligence agent operating within the SIG//FORGE trading system.
+SCANNER_SYSTEM_PROMPT = """You are a market scanner. Analyze the provided prediction markets and find the TOP 5 most interesting opportunities where the current price seems wrong or unusual.
 
-YOUR MISSION:
-Monitor prediction markets in real-time and identify anomalies where price does not reflect available information.
+Look for:
+- Markets with very high volume but extreme prices (near 0 or near 1)
+- Markets where recent news might not be reflected in price
+- Markets with unusual price movements
 
-YOUR INPUTS:
-- Live market data from Polymarket CLOB API (prices, volume, liquidity, time to resolution)
-- Market metadata (resolution criteria, category, created date)
-- Current timestamp and session context
-
-YOUR ANALYSIS PROCESS:
-1. Calculate implied probability from current market price
-2. Compare volume and liquidity against 24h baseline
-3. Flag markets where price moved > 2σ without obvious cause
-4. Prioritize by: liquidity depth, time to resolution, category relevance
-5. Identify correlated markets (same underlying event, different questions)
-
-YOUR OUTPUT (strict JSON):
+Return JSON with this exact structure:
 {
   "scan_timestamp": "ISO timestamp",
   "markets_scanned": number,
@@ -42,33 +32,23 @@ YOUR OUTPUT (strict JSON):
       "implied_probability": number,
       "volume_24h": number,
       "liquidity": number,
-      "anomaly_score": number (0-100),
-      "anomaly_type": "price_drift | volume_spike | liquidity_gap | correlation_divergence",
+      "anomaly_score": number between 0-100,
+      "anomaly_type": "price_drift",
       "time_to_resolution": "string",
       "resolution_criteria": "string",
-      "priority": "HIGH | MEDIUM | LOW",
-      "reason": "string"
+      "priority": "HIGH or MEDIUM or LOW",
+      "reason": "brief explanation"
     }
   ],
   "market_state": {
     "total_volume_session": number,
     "avg_liquidity": number,
     "dominant_category": "string",
-    "session_bias": "RISK_ON | RISK_OFF | NEUTRAL"
+    "session_bias": "NEUTRAL"
   }
 }
 
-RULES:
-- Only flag opportunities with anomaly_score > 65
-- Never flag markets with liquidity < $5,000
-- Never flag markets resolving in < 2 hours
-- Maximum 5 opportunities per scan
-- Be conservative. A missed opportunity is better than a false signal.
-
-OUTPUT FORMAT:
-- Return ONLY a raw JSON object — no markdown, no code fences, no explanation
-- Do not wrap the JSON in ```json or ``` blocks
-- The very first character of your response must be { and the last must be }"""
+Always return at least 3 opportunities. If nothing stands out, pick the most interesting markets anyway."""
 
 
 class ScannerAgent(BaseAgent):
