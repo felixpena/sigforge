@@ -113,7 +113,9 @@ Return ONLY the JSON output, no other text."""
 
         try:
             raw = await self._call_claude(user_message, max_tokens=2048)
+            print(f"[EXECUTION RAW] {raw[:300]}")
             result = await self._parse_output(raw)
+            print(f"[EXECUTION] Action={result.action} market={signal.market_id}")
 
             # Execute the trade (paper or live)
             await self._execute_entry(result, signal, risk)
@@ -127,6 +129,7 @@ Return ONLY the JSON output, no other text."""
             return result
 
         except Exception as e:
+            print(f"[EXECUTION ERROR] {e}")
             await self._log("ERROR", f"Execution entry failed: {e}")
             return None
 
