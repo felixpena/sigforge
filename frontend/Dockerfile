@@ -7,6 +7,8 @@ RUN npm install
 
 COPY . .
 
+RUN rm -rf node_modules/.vite && npm run build
+
 EXPOSE 3000
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npx", "serve", "-s", "dist", "-l", "3000"]
