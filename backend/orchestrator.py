@@ -157,6 +157,7 @@ class Orchestrator:
             if not risk_result:
                 continue
 
+            print(f"[RISK] Decision: {risk_result.decision} size={risk_result.approved_size} reason={risk_result.veto_reason}")
             await self._emit("risk", risk_result.model_dump())
 
             if risk_result.decision == "VETOED":
