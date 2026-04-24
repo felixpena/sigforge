@@ -92,13 +92,13 @@ class ScannerAgent(BaseAgent):
             else:
                 other_markets.append(m)
 
-        # Fill 100 slots: priority first, then other, then sports (capped at 20)
+        # Fill 50 slots: priority first, then other, then sports (capped at 20)
         diverse: list[dict] = []
-        diverse.extend(priority_markets[:100])
-        slots = 100 - len(diverse)
+        diverse.extend(priority_markets[:50])
+        slots = 50 - len(diverse)
         if slots > 0:
             diverse.extend(other_markets[:slots])
-        slots = 100 - len(diverse)
+        slots = 50 - len(diverse)
         if slots > 0:
             diverse.extend(sports_markets[: min(_SPORTS_CAP, slots)])
 
@@ -113,7 +113,7 @@ class ScannerAgent(BaseAgent):
 
         # Build minimal summaries — only fields Claude needs
         market_summaries = []
-        for m in diverse[:100]:  # cap at 100 to stay within Claude token limits
+        for m in diverse[:50]:  # cap at 50 to stay within Claude token limits
             tokens = m.get("tokens", [])
             yes_price = next(
                 (t["price"] for t in tokens if t.get("outcome", "").upper() == "YES"), None
